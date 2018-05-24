@@ -1,4 +1,6 @@
 import java.util.concurrent.atomic.AtomicStampedReference;
+import java.util.HashSet;
+import java.util.Set;
 
 class ConcurrentLinkedQueue<T> {
     AtomicStampedReference<LinkedNode<T>> qHead;
@@ -43,10 +45,11 @@ class ConcurrentLinkedQueue<T> {
         LinkedNode<T> node = new LinkedNode<>();
         node.value = value;
 
-		LinkedNodeAndCounter<T> tail = getLinkedNodeAndCounterAtomically(qTail);
-        LinkedNodeAndCounter<T> next = getLinkedNodeAndCounterAtomically(tail.ptr.next);
-
+		LinkedNodeAndCounter<T> tail;
         while (true) {
+			tail = getLinkedNodeAndCounterAtomically(qTail);
+        	LinkedNodeAndCounter<T> next = getLinkedNodeAndCounterAtomically(tail.ptr.next);
+
             if (getLinkedNodeAndCounterAtomically(qTail).equals(tail)) {
                 if (next.ptr == null) {
 					if (tail.ptr.next.compareAndSet(next.ptr, node, next.count, next.count+1)) {
@@ -89,9 +92,11 @@ class ConcurrentLinkedQueue<T> {
 	static class QueueTester implements Runnable {
 		ConcurrentLinkedQueue<String> queue;
 		boolean enQueue;
-		QueueTester(ConcurrentLinkedQueue<String> queue, boolean enQueue) {
+		int offset;
+		QueueTester(ConcurrentLinkedQueue<String> queue, int offset, boolean enQueue) {
 			this.queue = queue;
 			this.enQueue = enQueue;
+			this.offset = offset;
 		}
 
 		public void run() {
@@ -100,25 +105,21 @@ class ConcurrentLinkedQueue<T> {
 			int prev = -1;
 			while (true) {
 				if (enQueue) {
-					System.out.println(Thread.currentThread());
-					queue.enQueue(Thread.currentThread() + ":" + String.valueOf(i));
+					queue.enQueue(String.valueOf(offset+i));
 					i++;
-					if (i > 5) {
-						return;
-					}
 				} else {
 					String str;
+					Set<Integer> receivedSet = new HashSet<>();
 					while ((str = queue.deQueue()) != null) {
-//						int next = Integer.valueOf(str);
-						System.out.println(str);
-/*						if (next != prev + 1) {
-							System.out.println("Broke at " + prev + " with " + next);
+						boolean dup = receivedSet.add(Integer.valueOf(str));
+						if (!dup) {
+							System.out.println("Duplicate received");
 							return;
 						}
-						prev = next;
-						if (next % 10000 == 0) {
-							System.out.println("Fine upto " + next);
-						}*/
+
+						if (receivedSet.size() % 10000 == 0) {
+							System.out.println("Fine upto " + receivedSet.size());
+						}
 					}
 				}
 			}
@@ -128,16 +129,16 @@ class ConcurrentLinkedQueue<T> {
     public static void main(String args[]) throws InterruptedException {
         ConcurrentLinkedQueue<String> queue = new ConcurrentLinkedQueue<>();
         // test data.
-		Thread sender1 = new Thread(new QueueTester(queue, true));
-		Thread sender2 = new Thread(new QueueTester(queue, true));
-		Thread receiver = new Thread(new QueueTester(queue, false));
+		Thread sender1 = new Thread(new QueueTester(queue, 1000000, true));
+		Thread sender2 = new Thread(new QueueTester(queue, 0, true));
+		Thread receiver = new Thread(new QueueTester(queue, 0, false));
 
 		sender1.start();
 		sender2.start();
-//		receiver.start();
+		receiver.start();
 
 		sender1.join();
 		sender2.join();
-//		receiver.join();
+		receiver.join();
     }
 }
